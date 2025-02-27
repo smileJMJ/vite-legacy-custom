@@ -133,6 +133,7 @@ const _require = createRequire(import.meta.url)
 const nonLeadingHashInFileNameRE = /[^/]+\[hash(?::\d+)?\]/
 const prefixedHashInFileNameRE = /\W?\[hash(?::\d+)?\]/
 
+// ------------------ Main Function ---------------------------
 function viteLegacyPlugin(options: Options = {}): Plugin[] {
   let config: ResolvedConfig
   let targets: Options['targets']
@@ -153,6 +154,7 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
     'edge>=79, firefox>=67, chrome>=64, safari>=12, chromeAndroid>=64, iOS>=12'
 
   const genLegacy = options.renderLegacyChunks !== false
+  // const genLegacyChunkSameFile = options.generateLegacyChunkSameFile !== false
   const genModern = options.renderModernChunks !== false
   if (!genLegacy && !genModern) {
     throw new Error(
@@ -176,6 +178,7 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
     Map<string, { modern: Set<string>; legacy: Set<string> }> | null
   >()
 
+  // modernPolyfills 설정했을 때 modernPolyfills 추가
   if (Array.isArray(options.modernPolyfills) && genModern) {
     options.modernPolyfills.forEach((i) => {
       modernPolyfills.add(
@@ -183,11 +186,13 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
       )
     })
   }
+  // additionalModernPolyfills 설정했을 때 modernPolyfills에 추가
   if (Array.isArray(options.additionalModernPolyfills)) {
     options.additionalModernPolyfills.forEach((i) => {
       modernPolyfills.add(i)
     })
   }
+  // polyfills 설정했을 때 polyfills 추가
   if (Array.isArray(options.polyfills)) {
     options.polyfills.forEach((i) => {
       if (i.startsWith(`regenerator`)) {
@@ -199,6 +204,7 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
       }
     })
   }
+  // additionalLegacyPolyfills 설정했을 때 legacyPolyfills에 추가
   if (Array.isArray(options.additionalLegacyPolyfills)) {
     options.additionalLegacyPolyfills.forEach((i) => {
       legacyPolyfills.add(i)
@@ -207,10 +213,14 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
 
   let overriddenBuildTarget = false
   let overriddenDefaultModernTargets = false
+
+  // ------------------ Legacy Config Plugin ---------------------------
+  // 개발, 빌드일 때 플러그인 실행
   const legacyConfigPlugin: Plugin = {
     name: 'vite:legacy-config',
 
     async config(config, env) {
+      // production 빌드이면서 ssr이 아닐 때
       if (env.command === 'build' && !config.build?.ssr) {
         if (!config.build) {
           config.build = {}
@@ -236,9 +246,9 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
             const { default: browserslistToEsbuild } = await import(
               'browserslist-to-esbuild'
             )
-            config.build.target = browserslistToEsbuild(options.modernTargets)
+            config.build.target = browserslistToEsbuild(options.modernTargets) // browserslistToEsbuild: esbuild에서 빌드될 수 있는 브라우저 타겟으로 설정함
           } else {
-            config.build.target = modernTargetsEsbuild
+            config.build.target = modernTargetsEsbuild // browsers supporting ESM + dynamic import + import.meta + async generator
           }
         }
       }
@@ -276,11 +286,15 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
       }
     },
   }
+  // ------------------ Legacy Config Plugin ---------------------------
 
+  // ------------------ Legacy Generate Polyfill Plugin ---------------------------
+  // 빌드일 때만 플러그인 실행
   const legacyGenerateBundlePlugin: Plugin = {
     name: 'vite:legacy-generate-polyfill-chunk',
-    apply: 'build',
+    apply: 'build', // 빌드일 때만 플러그인 실행
 
+    // 메모리상에 번들 생성함 (수정 가능)
     async generateBundle(opts, bundle) {
       if (config.build.ssr) {
         return
@@ -365,11 +379,14 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
       }
     },
   }
+  // ------------------ Legacy Generate Polyfill Plugin ---------------------------
 
+  // ------------------ Legacy Post Process Plugin ---------------------------
+  // production 빌드일 때, 빌드 단계에서 마지막으로 해당 플러그인 실행
   const legacyPostPlugin: Plugin = {
     name: 'vite:legacy-post-process',
-    enforce: 'post',
-    apply: 'build',
+    enforce: 'post', // 빌드 단계에서 마지막으로 해당 플러그인 호출
+    apply: 'build', // 빌드일 때만 플러그인 실행
 
     renderStart(opts) {
       // Empty the nested map for this output
@@ -728,9 +745,11 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
       }
     },
   }
+  // ------------------ Legacy Post Process Plugin ---------------------------
 
   return [legacyConfigPlugin, legacyGenerateBundlePlugin, legacyPostPlugin]
 }
+// ------------------ Main Function ---------------------------
 
 export async function detectPolyfills(
   code: string,

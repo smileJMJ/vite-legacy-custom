@@ -29,4 +29,9 @@ export interface Options {
    * default: true
    */
   renderModernChunks?: boolean
+
+  /**
+   * default: false (신규 추가)
+   */
+  generateLegacyChunkSameFile?: boolean
 }
