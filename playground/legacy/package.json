@@ -16,7 +16,7 @@
   },
   "devDependencies": {
     "vite": "workspace:*",
-    "@vitejs/plugin-legacy": "workspace:*",
+    "@vitejs/plugin-legacy-custom": "workspace:*",
     "express": "^5.0.1",
     "terser": "^5.39.0"
   }

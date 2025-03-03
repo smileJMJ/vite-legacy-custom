@@ -154,8 +154,10 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
     'edge>=79, firefox>=67, chrome>=64, safari>=12, chromeAndroid>=64, iOS>=12'
 
   const genLegacy = options.renderLegacyChunks !== false
-  // const genLegacyChunkSameFile = options.generateLegacyChunkSameFile !== false
-  const genModern = options.renderModernChunks !== false
+  const genLegacyChunkSameFile = options.generateLegacyChunkSameFile === true
+  const genModern = genLegacyChunkSameFile
+    ? false
+    : options.renderModernChunks !== false
   if (!genLegacy && !genModern) {
     throw new Error(
       '`renderLegacyChunks` and `renderModernChunks` cannot be both false',
@@ -308,7 +310,7 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
         )
       }
 
-      if (!isLegacyBundle(bundle, opts)) {
+      if (!isLegacyBundle(bundle, opts, genLegacyChunkSameFile)) {
         // Merge discovered modern polyfills to `modernPolyfills`
         for (const { modern } of chunkFileNameToPolyfills.values()) {
           modern.forEach((p) => modernPolyfills.add(p))
@@ -433,7 +435,9 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
 
           if (fileName.includes('[name]')) {
             // [name]-[hash].[format] -> [name]-legacy-[hash].[format]
-            fileName = fileName.replace('[name]', '[name]-legacy')
+            fileName = genLegacyChunkSameFile
+              ? fileName
+              : fileName.replace('[name]', '[name]-legacy')
           } else if (nonLeadingHashInFileNameRE.test(fileName)) {
             // custom[hash].[format] -> [name]-legacy[hash].[format]
             // custom-[hash].[format] -> [name]-legacy-[hash].[format]
@@ -500,7 +504,7 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
         )
       }
 
-      if (!isLegacyChunk(chunk, opts)) {
+      if (!isLegacyChunk(chunk, opts, genLegacyChunkSameFile)) {
         if (
           options.modernPolyfills &&
           !Array.isArray(options.modernPolyfills) &&
@@ -598,7 +602,7 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
     transformIndexHtml(html, { chunk }) {
       if (config.build.ssr) return
       if (!chunk) return
-      if (chunk.fileName.includes('-legacy')) {
+      if (chunk.fileName.includes('-legacy') || genLegacyChunkSameFile) {
         // The legacy bundle is built first, and its index.html isn't actually emitted if
         // modern bundle will be generated. Here we simply record its corresponding legacy chunk.
         facadeToLegacyChunkMap.set(chunk.facadeModuleId, chunk.fileName)
@@ -735,7 +739,7 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
         return
       }
 
-      if (isLegacyBundle(bundle, opts) && genModern) {
+      if (isLegacyBundle(bundle, opts, genLegacyChunkSameFile) && genModern) {
         // avoid emitting duplicate assets
         for (const name in bundle) {
           if (bundle[name].type === 'asset' && !/.+\.map$/.test(name)) {
@@ -930,20 +934,31 @@ function prependModenChunkLegacyGuardPlugin(): Plugin {
   }
 }
 
-function isLegacyChunk(chunk: RenderedChunk, options: NormalizedOutputOptions) {
-  return options.format === 'system' && chunk.fileName.includes('-legacy')
+function isLegacyChunk(
+  chunk: RenderedChunk,
+  options: NormalizedOutputOptions,
+  genLegacyChunkSameFile?: boolean,
+) {
+  return (
+    options.format === 'system' &&
+    (chunk.fileName.includes('-legacy') || genLegacyChunkSameFile)
+  )
 }
 
 function isLegacyBundle(
   bundle: OutputBundle,
   options: NormalizedOutputOptions,
+  genLegacyChunkSameFile?: boolean,
 ) {
   if (options.format === 'system') {
     const entryChunk = Object.values(bundle).find(
       (output) => output.type === 'chunk' && output.isEntry,
     )
 
-    return !!entryChunk && entryChunk.fileName.includes('-legacy')
+    return (
+      !!entryChunk &&
+      (entryChunk.fileName.includes('-legacy') || genLegacyChunkSameFile)
+    )
   }
 
   return false

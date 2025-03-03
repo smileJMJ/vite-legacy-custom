@@ -1,5 +1,5 @@
 {
-  "name": "@vitejs/plugin-legacy-csutsom",
+  "name": "@vitejs/plugin-legacy-custom",
   "version": "6.0.2",
   "type": "module",
   "license": "MIT",
