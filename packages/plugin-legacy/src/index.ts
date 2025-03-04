@@ -222,6 +222,8 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
     name: 'vite:legacy-config',
 
     async config(config, env) {
+      console.log('== (1) vite:legacy-config ::: Vite 전용 훅 config() ==')
+
       // production 빌드이면서 ssr이 아닐 때
       if (env.command === 'build' && !config.build?.ssr) {
         if (!config.build) {
@@ -265,6 +267,10 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
       }
     },
     configResolved(config) {
+      console.log(
+        '== (1) vite:legacy-config ::: Vite 전용 훅 configResolved() ==',
+      )
+
       if (overriddenBuildTarget) {
         config.logger.warn(
           colors.yellow(
@@ -298,6 +304,10 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
 
     // 메모리상에 번들 생성함 (수정 가능)
     async generateBundle(opts, bundle) {
+      console.log(
+        '== (2) vite:legacy-generate-polyfill-chunk ::: Rollup훅 generateBundle() ==',
+      )
+
       if (config.build.ssr) {
         return
       }
@@ -310,7 +320,7 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
         )
       }
 
-      if (!isLegacyBundle(bundle, opts, genLegacyChunkSameFile)) {
+      if (!isLegacyBundle(bundle, opts)) {
         // Merge discovered modern polyfills to `modernPolyfills`
         for (const { modern } of chunkFileNameToPolyfills.values()) {
           modern.forEach((p) => modernPolyfills.add(p))
@@ -358,6 +368,8 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
         )
       }
 
+      // TODO. 여기까진 legacy chunk에서 소스코드가 살아있음
+
       if (legacyPolyfills.size || !options.externalSystemJS) {
         if (isDebug) {
           console.log(
@@ -391,11 +403,19 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
     apply: 'build', // 빌드일 때만 플러그인 실행
 
     renderStart(opts) {
+      console.log(
+        '== (3) vite:legacy-post-process ::: Rollup훅 renderStart() ==',
+      )
+
       // Empty the nested map for this output
       outputToChunkFileNameToPolyfills.set(opts, null)
     },
 
     configResolved(_config) {
+      console.log(
+        '== (3) vite:legacy-post-process ::: Vite전용훅 configResolved() ==',
+      )
+
       if (_config.build.lib) {
         throw new Error('@vitejs/plugin-legacy does not support library mode.')
       }
@@ -435,9 +455,7 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
 
           if (fileName.includes('[name]')) {
             // [name]-[hash].[format] -> [name]-legacy-[hash].[format]
-            fileName = genLegacyChunkSameFile
-              ? fileName
-              : fileName.replace('[name]', '[name]-legacy')
+            fileName = fileName.replace('[name]', '[name]-legacy')
           } else if (nonLeadingHashInFileNameRE.test(fileName)) {
             // custom[hash].[format] -> [name]-legacy[hash].[format]
             // custom-[hash].[format] -> [name]-legacy-[hash].[format]
@@ -481,6 +499,10 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
     },
 
     async renderChunk(raw, chunk, opts, { chunks }) {
+      console.log(
+        '== (3) vite:legacy-post-process ::: Rollup훅 renderChunk() ==',
+      )
+
       if (config.build.ssr) {
         return null
       }
@@ -504,7 +526,7 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
         )
       }
 
-      if (!isLegacyChunk(chunk, opts, genLegacyChunkSameFile)) {
+      if (!isLegacyChunk(chunk, opts)) {
         if (
           options.modernPolyfills &&
           !Array.isArray(options.modernPolyfills) &&
@@ -600,9 +622,13 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
     },
 
     transformIndexHtml(html, { chunk }) {
+      console.log(
+        '== (3) vite:legacy-post-process ::: Vite전용훅 transformIndexHtml() ==',
+      )
+
       if (config.build.ssr) return
       if (!chunk) return
-      if (chunk.fileName.includes('-legacy') || genLegacyChunkSameFile) {
+      if (chunk.fileName.includes('-legacy')) {
         // The legacy bundle is built first, and its index.html isn't actually emitted if
         // modern bundle will be generated. Here we simply record its corresponding legacy chunk.
         facadeToLegacyChunkMap.set(chunk.facadeModuleId, chunk.fileName)
@@ -735,11 +761,30 @@ function viteLegacyPlugin(options: Options = {}): Plugin[] {
     },
 
     generateBundle(opts, bundle) {
+      console.log(
+        '== (3) vite:legacy-post-process ::: Rollup훅 generateBundle() ==',
+      )
+
+      // -legacy 제거 (여기서 하면 .map 파일 내부에서 -legacy.js 로 참조해서 전체적으로 -legacy 생성안되도록 손봐야함)
+      // if(genLegacyChunkSameFile) {
+      //   console.log("== (3) vite:legacy-post-process ::: Rollup훅 generateBundle() ::: -legacy 제거 ==");
+      //   for (const name in bundle) {
+      //     if (/-legacy.js/.test(name)) {
+      //       const rename = name.replace(/-legacy/, '');
+      //       bundle[rename] = {
+      //         ...bundle[name],
+      //         fileName: rename
+      //       };
+      //       delete bundle[name];
+      //     }
+      //   }
+      // }
+
       if (config.build.ssr) {
         return
       }
 
-      if (isLegacyBundle(bundle, opts, genLegacyChunkSameFile) && genModern) {
+      if (isLegacyBundle(bundle, opts) && genModern) {
         // avoid emitting duplicate assets
         for (const name in bundle) {
           if (bundle[name].type === 'asset' && !/.+\.map$/.test(name)) {
@@ -934,31 +979,20 @@ function prependModenChunkLegacyGuardPlugin(): Plugin {
   }
 }
 
-function isLegacyChunk(
-  chunk: RenderedChunk,
-  options: NormalizedOutputOptions,
-  genLegacyChunkSameFile?: boolean,
-) {
-  return (
-    options.format === 'system' &&
-    (chunk.fileName.includes('-legacy') || genLegacyChunkSameFile)
-  )
+function isLegacyChunk(chunk: RenderedChunk, options: NormalizedOutputOptions) {
+  return options.format === 'system' && chunk.fileName.includes('-legacy')
 }
 
 function isLegacyBundle(
   bundle: OutputBundle,
   options: NormalizedOutputOptions,
-  genLegacyChunkSameFile?: boolean,
 ) {
   if (options.format === 'system') {
     const entryChunk = Object.values(bundle).find(
       (output) => output.type === 'chunk' && output.isEntry,
     )
 
-    return (
-      !!entryChunk &&
-      (entryChunk.fileName.includes('-legacy') || genLegacyChunkSameFile)
-    )
+    return !!entryChunk && entryChunk.fileName.includes('-legacy')
   }
 
   return false
